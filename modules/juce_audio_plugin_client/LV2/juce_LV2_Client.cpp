@@ -105,6 +105,12 @@ public:
           mapFeature (map),
           legacyParameters (proc, false)
     {
+        names.resize(legacyParameters.size());
+        for (auto* param : legacyParameters) {
+          const auto name = param->getName(1024);
+          const auto parameterIndex = param->getParameterIndex();
+          names[parameterIndex] = name;
+        }
         processor.addListener (this);
     }
 
@@ -165,12 +171,13 @@ public:
 
     struct Options
     {
-        bool parameterValue, gestureBegin, gestureEnd;
+        bool parameterValue, gestureBegin, gestureEnd, parameterInfo;
     };
 
     static constexpr auto newClientValue = 1 << 0,
                           gestureBegan   = 1 << 1,
-                          gestureEnded   = 1 << 2;
+                          gestureEnded   = 1 << 2,
+                          newClientInfo  = 1 << 3;
 
     template <typename Callback>
     void forEachChangedParameter (Callback&& callback)
@@ -179,7 +186,8 @@ public:
         {
             const Options options { (bits & newClientValue) != 0,
                                     (bits & gestureBegan)   != 0,
-                                    (bits & gestureEnded)   != 0 };
+                                    (bits & gestureEnded)   != 0,
+                                    (bits & newClientInfo)  != 0 };
 
             callback (*legacyParameters.getParamForIndex ((int) parameterIndex),
                       indexToUridMap[parameterIndex],
@@ -206,11 +214,25 @@ private:
             stateCache.setBits ((size_t) parameterIndex, gestureEnded);
     }
 
-    void audioProcessorChanged (AudioProcessor*, const ChangeDetails&) override {}
+    void audioProcessorChanged (AudioProcessor*, const ChangeDetails& details) override
+    {
+      if (! ignoreCallbacks && details.parameterInfoChanged) {
+        for (auto* param : legacyParameters)
+        {
+	  const auto name = param->getName(1024);
+	  const auto parameterIndex = param->getParameterIndex();
+	  if (name != names[parameterIndex]) {
+            names[parameterIndex] = name;
+            stateCache.setBits ((size_t) parameterIndex, newClientInfo);
+	  }
+        }
+      }
+    }
 
     AudioProcessor& processor;
     const LV2_URID_Map mapFeature;
     const LegacyAudioParametersWrapper legacyParameters;
+    std::vector<String> names;
     const std::vector<LV2_URID> indexToUridMap = [&]
     {
         std::vector<LV2_URID> result;
@@ -241,7 +263,7 @@ private:
 
         return result;
     }();
-    FlaggedFloatCache<3> stateCache { (size_t) legacyParameters.getNumParameters() };
+    FlaggedFloatCache<4> stateCache { (size_t) legacyParameters.getNumParameters() };
     bool ignoreCallbacks = false;
 
     JUCE_LEAK_DETECTOR (ParameterStorage)
@@ -630,6 +652,20 @@ public:
 
                     return param.getValue();
                 }());
+            }
+
+            if (options.parameterInfo)
+            {
+                lv2_atom_forge_frame_time (forge, 0);
+
+                lv2_shared::ObjectFrame object { forge, (uint32_t) 0, patchSetHelper.mLV2_PATCH__Set };
+
+                lv2_atom_forge_key (forge, patchSetHelper.mLV2_PATCH__property);
+                lv2_atom_forge_urid (forge, paramUrid);
+
+                lv2_atom_forge_key (forge, patchSetHelper.mLV2_PATCH__value);
+                const auto name = param.getName(1024);
+                lv2_atom_forge_string (forge, name.toRawUTF8(), name.getNumBytesAsUTF8()+1);
             }
 
             if (options.gestureEnd)
