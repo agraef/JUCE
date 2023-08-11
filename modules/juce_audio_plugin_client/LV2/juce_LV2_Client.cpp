@@ -214,7 +214,7 @@ private:
             stateCache.setBits ((size_t) parameterIndex, gestureEnded);
     }
 
-    void audioProcessorChanged (AudioProcessor*, const ChangeDetails& details) override
+    void audioProcessorChanged (AudioProcessor* proc, const ChangeDetails& details) override
     {
       if (! ignoreCallbacks && details.parameterInfoChanged) {
         for (auto* param : legacyParameters)
@@ -222,6 +222,7 @@ private:
 	  const auto name = param->getName(1024);
 	  const auto parameterIndex = param->getParameterIndex();
 	  if (name != names[parameterIndex]) {
+            std::cerr << proc->getName() << ": parameterInfoChanged index: " << parameterIndex << ": " << names[parameterIndex] << " -> " << name << "\n";
             names[parameterIndex] = name;
             stateCache.setBits ((size_t) parameterIndex, newClientInfo);
 	  }
@@ -666,6 +667,7 @@ public:
                 lv2_atom_forge_key (forge, patchSetHelper.mLV2_PATCH__value);
                 const auto name = param.getName(1024);
                 lv2_atom_forge_string (forge, name.toRawUTF8(), name.getNumBytesAsUTF8()+1);
+                std::cerr << processor->getName() << ": patch.Set message index: " << param.getParameterIndex() << " (urid: " << paramUrid << ") name change -> " << name << "\n";
             }
 
             if (options.gestureEnd)
